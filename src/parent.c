@@ -1,4 +1,10 @@
-﻿#include <stdio.h>
+﻿/*
+* Программа сортирует и выводит переменные окружения, а затем запускает дочерние процессы
+* в зависимости от ввода пользователя. Дочерние процессы могут использовать либо
+* специально созданное окружение, либо окружение родительского процесса.
+*/
+
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -7,12 +13,28 @@
 #include <locale.h>
 
 #define MAX_CHILDREN 100
-int compareStrings(const void *a, const void *b);
+#define CHILD_NAME_LEN 20
+#define CHILD_PROGRAM_LEN 255
+#define ENV_FILE "env"
+
+/**
+* @brief Сравнивает две строки для использования в qsort.
+* 
+* @param a Указатель на первую строку.
+* @param b Указатель на вторую строку.
+* @return int Результат сравнения строк.
+*/
+int compare_strings(const void *a, const void *b);
+
+/**
+* @brief Создает окружение для дочернего процесса на основе файла.
+* 
+* @return char** Массив строк, представляющих окружение.
+*/
 char **create_child_env();
 
-
 int main() {
-    // Устанавливаем локаль для сортировки
+// Устанавливаем локаль для сортировки
     setlocale(LC_COLLATE, "C");
 
     // Сортируем и выводим окружение
@@ -22,10 +44,10 @@ int main() {
         env_count++;
     }
 
-    char **sorted_environ = malloc(sizeof(char *) * (env_count + 1));
+     char **sorted_environ = malloc(sizeof(char *) * (env_count + 1));
     if (!sorted_environ) {
         perror("malloc failed");
-        return 1;
+        return EXIT_FAILURE;
     }
 
     for (int i = 0; i < env_count; i++) {
@@ -33,7 +55,7 @@ int main() {
     }
     sorted_environ[env_count] = NULL;
 
-    qsort(sorted_environ, env_count, sizeof(char *), compareStrings);
+    qsort(sorted_environ, env_count, sizeof(char *), compare_strings);
 
     for (int i = 0; sorted_environ[i] != NULL; i++) {
         printf("%s\n", sorted_environ[i]);
@@ -43,6 +65,9 @@ int main() {
 
     // Создаем среду для дочернего процесса
     char **child_env = create_child_env();
+    if (!child_env) {
+        return EXIT_FAILURE;
+    }
 
     // Основной цикл обработки ввода
     int child_counter = 0;
@@ -62,15 +87,15 @@ int main() {
             char *child_path = getenv("CHILD_PATH");
             if (!child_path) {
                 fprintf(stderr, "CHILD_PATH not set.\n");
-                return 1;
+                return EXIT_FAILURE;
             }
 
-            // Формируем имя дочернего процесса
-            char child_name[20];
+             // Формируем имя дочернего процесса
+            char child_name[CHILD_NAME_LEN];
             snprintf(child_name, sizeof(child_name), "child_%02d", child_counter);
 
             // Формируем полный путь к дочернему процессу
-            char child_program[255];
+            char child_program[CHILD_PROGRAM_LEN];
             snprintf(child_program, sizeof(child_program), "%s/child", child_path);
 
             // Запускаем дочерний процесс
@@ -81,7 +106,7 @@ int main() {
                     char *argv[] = {child_name, "env", NULL};
                     execve(child_program, argv, child_env);
                 } else if (input == '*') {
-                    char *argv[] = {child_name, NULL};
+                    char *argv[] = {child_name, "env", NULL};
                     execve(child_program, argv, environ); // Передаем окружение родителя
                 }
                 perror("execve failed");
@@ -107,26 +132,39 @@ int main() {
     }
     free(child_env);
 
-    return 0;
+    return EXIT_SUCCESS;
 }
 
-
-
-
-// Функция для сравнения строк (для qsort)
-int compareStrings(const void *a, const void *b) {
+/**
+* @brief Сравнивает две строки для использования в qsort.
+* 
+* @param a Указатель на первую строку.
+* @param b Указатель на вторую строку.
+* @return int Результат сравнения строк.
+*/
+int compare_strings(const void *a, const void *b) {
     return strcmp(*(const char **)a, *(const char **)b);
 }
 
-// Функция для создания среды для дочернего процесса
+/**
+* @brief Создает окружение для дочернего процесса на основе файла.
+* 
+* @return char** Массив строк, представляющих окружение.
+*/
 char **create_child_env() {
-    FILE *file = fopen("env", "r");
+    FILE *file = fopen(ENV_FILE, "r");
     if (!file) {
         perror("fopen failed");
-        exit(EXIT_FAILURE);
+        return NULL;
     }
 
     char **env = malloc(MAX_CHILDREN * sizeof(char *));
+    if (!env) {
+        perror("malloc failed");
+        fclose(file);
+        return NULL;
+    }
+
     char line[256];
     int i = 0;
 
@@ -135,6 +173,15 @@ char **create_child_env() {
         char *value = getenv(line);
         if (value) {
             env[i] = malloc(strlen(line) + strlen(value) + 2);
+            if (!env[i]) {
+                perror("malloc failed");
+                for (int j = 0; j < i; j++) {
+                    free(env[j]);
+                }
+                free(env);
+                fclose(file);
+                return NULL;
+            }
             sprintf(env[i], "%s=%s", line, value);
             i++;
         }
