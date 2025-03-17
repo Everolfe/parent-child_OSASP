@@ -7,16 +7,10 @@
 #include <locale.h>
 
 #define MAX_CHILDREN 100
-
-// Прототипы функций
 int compareStrings(const void *a, const void *b);
 char **create_child_env();
 
-/*
- * Основная функция программы.
- * Сортирует и выводит переменные окружения, затем создает дочерние процессы
- * в зависимости от ввода пользователя.
- */
+
 int main() {
     // Устанавливаем локаль для сортировки
     setlocale(LC_COLLATE, "C");
@@ -28,35 +22,27 @@ int main() {
         env_count++;
     }
 
-    // Выделяем память для отсортированного окружения
     char **sorted_environ = malloc(sizeof(char *) * (env_count + 1));
     if (!sorted_environ) {
         perror("malloc failed");
-        return EXIT_FAILURE;
+        return 1;
     }
 
-    // Копируем переменные окружения в массив
     for (int i = 0; i < env_count; i++) {
         sorted_environ[i] = environ[i];
     }
     sorted_environ[env_count] = NULL;
 
-    // Сортируем массив
     qsort(sorted_environ, env_count, sizeof(char *), compareStrings);
 
-    // Выводим отсортированные переменные окружения
     for (int i = 0; sorted_environ[i] != NULL; i++) {
         printf("%s\n", sorted_environ[i]);
     }
 
-    // Освобождаем память
     free(sorted_environ);
 
     // Создаем среду для дочернего процесса
     char **child_env = create_child_env();
-    if (!child_env) {
-        return EXIT_FAILURE;
-    }
 
     // Основной цикл обработки ввода
     int child_counter = 0;
@@ -76,7 +62,7 @@ int main() {
             char *child_path = getenv("CHILD_PATH");
             if (!child_path) {
                 fprintf(stderr, "CHILD_PATH not set.\n");
-                return EXIT_FAILURE;
+                return 1;
             }
 
             // Формируем имя дочернего процесса
@@ -121,55 +107,34 @@ int main() {
     }
     free(child_env);
 
-    return EXIT_SUCCESS;
+    return 0;
 }
 
-/*
- * Функция для сравнения строк (для qsort).
- * Возвращает результат strcmp.
- */
+
+
+
+// Функция для сравнения строк (для qsort)
 int compareStrings(const void *a, const void *b) {
     return strcmp(*(const char **)a, *(const char **)b);
 }
 
-/*
- * Функция для создания среды для дочернего процесса.
- * Читает файл "env" и создает массив переменных окружения.
- * Возвращает указатель на массив или NULL в случае ошибки.
- */
+// Функция для создания среды для дочернего процесса
 char **create_child_env() {
     FILE *file = fopen("env", "r");
     if (!file) {
         perror("fopen failed");
-        return NULL;
+        exit(EXIT_FAILURE);
     }
 
-    // Выделяем память для массива переменных окружения
     char **env = malloc(MAX_CHILDREN * sizeof(char *));
-    if (!env) {
-        perror("malloc failed");
-        fclose(file);
-        return NULL;
-    }
-
     char line[256];
     int i = 0;
 
-    // Читаем файл построчно
     while (fgets(line, sizeof(line), file)) {
         line[strcspn(line, "\n")] = 0; // Удаляем символ новой строки
         char *value = getenv(line);
         if (value) {
             env[i] = malloc(strlen(line) + strlen(value) + 2);
-            if (!env[i]) {
-                perror("malloc failed");
-                fclose(file);
-                for (int j = 0; j < i; j++) {
-                    free(env[j]);
-                }
-                free(env);
-                return NULL;
-            }
             sprintf(env[i], "%s=%s", line, value);
             i++;
         }
