@@ -3,7 +3,7 @@
 * в зависимости от ввода пользователя. Дочерние процессы могут использовать либо
 * специально созданное окружение, либо окружение родительского процесса.
 */
-
+#define _POSIX_C_SOURCE 200112L
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,10 +33,11 @@ int compare_strings(const void *a, const void *b);
 */
 char **create_child_env();
 
-int main() {
-// Устанавливаем локаль для сортировки
+int main(int argc, char *argv[], char *envp[]) {
+    // Устанавливаем локаль для сортировки
     setlocale(LC_COLLATE, "C");
 
+    setenv("LC_COLLATE", "C", 1);
     // Сортируем и выводим окружение
     extern char **environ;
     int env_count = 0;
@@ -74,6 +75,10 @@ int main() {
     char input;
 
     while (1) {
+        printf("Input char \n");
+        printf("+ - Launch a child process with an environment created from the 'env' file\n");
+        printf("* - Launch a child process with the parent process's environment\n");
+        printf("q - Exit the program\n");
         printf("Parent process: ");
         scanf(" %c", &input); // Чтение ввода пользователя
 
