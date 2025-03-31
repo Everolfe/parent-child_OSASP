@@ -17,6 +17,7 @@
 #define CHILD_PROGRAM_LEN 255
 #define ENV_FILE "env"
 
+extern char **environ;
 /**
 * @brief Сравнивает две строки для использования в qsort.
 * 
@@ -34,112 +35,123 @@ int compare_strings(const void *a, const void *b);
 char **create_child_env();
 
 int main(int argc, char *argv[], char *envp[]) {
-    // Устанавливаем локаль для сортировки
     setlocale(LC_COLLATE, "C");
-
     setenv("LC_COLLATE", "C", 1);
-    // Сортируем и выводим окружение
-    extern char **environ;
-    int env_count = 0;
-    while (environ[env_count] != NULL) {
-        env_count++;
-    }
 
-     char **sorted_environ = malloc(sizeof(char *) * (env_count + 1));
-    if (!sorted_environ) {
+    // Sort and print environment
+    int env_count = 0;
+    while (environ[env_count]) env_count++;
+    
+    char **sorted_env = malloc((env_count + 1) * sizeof(char *));
+    if (!sorted_env) {
         perror("malloc failed");
         return EXIT_FAILURE;
     }
-
+    
     for (int i = 0; i < env_count; i++) {
-        sorted_environ[i] = environ[i];
+        sorted_env[i] = environ[i];
     }
-    sorted_environ[env_count] = NULL;
-
-    qsort(sorted_environ, env_count, sizeof(char *), compare_strings);
-
-    for (int i = 0; sorted_environ[i] != NULL; i++) {
-        printf("%s\n", sorted_environ[i]);
+    sorted_env[env_count] = NULL;
+    
+    qsort(sorted_env, env_count, sizeof(char *), compare_strings);
+    
+    for (int i = 0; sorted_env[i]; i++) {
+        printf("%s\n", sorted_env[i]);
     }
+    free(sorted_env);
 
-    free(sorted_environ);
-
-    // Создаем среду для дочернего процесса
-    char **child_env = create_child_env();
-    if (!child_env) {
-        return EXIT_FAILURE;
-    }
-
-    // Основной цикл обработки ввода
+    // Main loop
     int child_counter = 0;
     char input;
-
+    
     while (1) {
-        printf("Input char \n");
-        printf("+ - Launch a child process with an environment created from the 'env' file\n");
-        printf("* - Launch a child process with the parent process's environment\n");
-        printf("q - Exit the program\n");
-        printf("Parent process: ");
-        scanf(" %c", &input); // Чтение ввода пользователя
-
-        if (input == '+' || input == '*') {
-            if (child_counter >= MAX_CHILDREN) {
-                printf("Reached the maximum number of children.\n");
-                continue;
-            }
-
-            // Получаем путь к дочернему процессу
-            char *child_path = getenv("CHILD_PATH");
-            if (!child_path) {
-                fprintf(stderr, "CHILD_PATH not set.\n");
-                return EXIT_FAILURE;
-            }
-
-             // Формируем имя дочернего процесса
-            char child_name[CHILD_NAME_LEN];
-            snprintf(child_name, sizeof(child_name), "child_%02d", child_counter);
-
-            // Формируем полный путь к дочернему процессу
-            char child_program[CHILD_PROGRAM_LEN];
-            snprintf(child_program, sizeof(child_program), "%s/child", child_path);
-
-            // Запускаем дочерний процесс
-            pid_t pid = fork();
-            if (pid == 0) {
-                // Дочерний процесс
-                if (input == '+') {
-                    char *argv[] = {child_name, "env", NULL};
-                    execve(child_program, argv, child_env);
-                } else if (input == '*') {
-                    char *argv[] = {child_name, "env", NULL};
-                    execve(child_program, argv, environ); // Передаем окружение родителя
+        printf("\nMenu:\n");
+        printf("+ - Launch child with getenv() path\n");
+        printf("* - Launch child with envp path\n");
+        printf("& - Launch child with environ path\n");
+        printf("q - Quit\n");
+        printf("Enter command: ");
+        scanf(" %c", &input);
+        
+        if (input == 'q') {
+            break;
+        }
+        
+        if (input != '+' && input != '*' && input != '&') {
+            printf("Invalid command\n");
+            continue;
+        }
+        
+        if (child_counter >= MAX_CHILDREN) {
+            printf("Maximum number of children reached\n");
+            continue;
+        }
+        
+        // Get child path
+        char *child_path = NULL;
+        if (input == '+') {
+            child_path = getenv("CHILD_PATH");
+        } else if (input == '*') {
+            for (int i = 0; envp[i]; i++) {
+                if (strncmp(envp[i], "CHILD_PATH=", 11) == 0) {
+                    child_path = envp[i] + 11;
+                    break;
                 }
-                perror("execve failed");
-                exit(EXIT_FAILURE);
-            } else if (pid > 0) {
-                // Родительский процесс
-                child_counter++;
-                wait(NULL); // Ожидаем завершения дочернего процесса
-            } else {
-                perror("fork failed");
-                exit(EXIT_FAILURE);
             }
-        } else if (input == 'q') {
-            break; // Завершаем программу
+        } else if (input == '&') {
+            for (int i = 0; environ[i]; i++) {
+                if (strncmp(environ[i], "CHILD_PATH=", 11) == 0) {
+                    child_path = environ[i] + 11;
+                    break;
+                }
+            }
+        }
+        
+        if (!child_path) {
+            printf("CHILD_PATH not found\n");
+            continue;
+        }
+        
+        // Create child name
+        char child_name[CHILD_NAME_LEN];
+        snprintf(child_name, sizeof(child_name), "child_%02d", child_counter);
+        
+        // Create full path
+        char child_program[CHILD_PROGRAM_LEN];
+        snprintf(child_program, sizeof(child_program), "%s/child", child_path);
+        
+        // Prepare arguments for execve
+        char *child_argv[] = {child_name, "env", NULL};
+        
+        pid_t pid = fork();
+        if (pid == 0) {
+            // Child process
+            if (input == '+') {
+                char **child_env = create_child_env();
+                if (!child_env) {
+                    exit(EXIT_FAILURE);
+                }
+                execve(child_program, child_argv, child_env);
+                perror("execve failed");
+                for (int i = 0; child_env[i]; i++) free(child_env[i]);
+                free(child_env);
+            } else {
+                // For '*' and '&' cases, use parent's environment
+                execve(child_program, child_argv, environ);
+                perror("execve failed");
+            }
+            exit(EXIT_FAILURE);
+        } else if (pid > 0) {
+            // Parent process
+            child_counter++;
+            waitpid(pid, NULL, 0);
         } else {
-            printf("Invalid input. Try again.\n");
+            perror("fork failed");
         }
     }
-
-    // Освобождаем память
-    for (int i = 0; child_env[i]; i++) {
-        free(child_env[i]);
-    }
-    free(child_env);
-
+    
     return EXIT_SUCCESS;
 }
-
 /**
 * @brief Сравнивает две строки для использования в qsort.
 * 
@@ -157,41 +169,80 @@ int compare_strings(const void *a, const void *b) {
 * @return char** Массив строк, представляющих окружение.
 */
 char **create_child_env() {
-    FILE *file = fopen(ENV_FILE, "r");
-    if (!file) {
-        perror("fopen failed");
-        return NULL;
-    }
-
-    char **env = malloc(MAX_CHILDREN * sizeof(char *));
+    const char *required_vars[] = {
+        "SHELL", "HOME", "HOSTNAME", "LOGNAME", "LANG", 
+        "TERM", "USER", "LC_COLLATE", "PATH", NULL
+    };
+    
+    // First count required vars
+    int count = 0;
+    while (required_vars[count]) count++;
+    
+    // Allocate space for env pointers + NULL
+    char **env = malloc((count + 1) * sizeof(char *));
     if (!env) {
         perror("malloc failed");
-        fclose(file);
         return NULL;
     }
-
-    char line[256];
+    
+    // Fill the environment
     int i = 0;
-
-    while (fgets(line, sizeof(line), file)) {
-        line[strcspn(line, "\n")] = 0; // Удаляем символ новой строки
-        char *value = getenv(line);
+    for (int j = 0; required_vars[j]; j++) {
+        char *value = getenv(required_vars[j]);
         if (value) {
-            env[i] = malloc(strlen(line) + strlen(value) + 2);
+            env[i] = malloc(strlen(required_vars[j]) + strlen(value) + 2);
             if (!env[i]) {
                 perror("malloc failed");
-                for (int j = 0; j < i; j++) {
-                    free(env[j]);
-                }
+                for (int k = 0; k < i; k++) free(env[k]);
                 free(env);
-                fclose(file);
                 return NULL;
             }
-            sprintf(env[i], "%s=%s", line, value);
+            sprintf(env[i], "%s=%s", required_vars[j], value);
             i++;
         }
     }
+    
+    // Add variables from file if it exists
+    FILE *file = fopen(ENV_FILE, "r");
+    if (file) {
+        char line[256];
+        while (fgets(line, sizeof(line), file)) {
+            line[strcspn(line, "\n")] = 0;
+            // Skip if already in required vars
+            int skip = 0;
+            for (int j = 0; required_vars[j]; j++) {
+                if (strcmp(line, required_vars[j]) == 0) {
+                    skip = 1;
+                    break;
+                }
+            }
+            if (skip) continue;
+            
+            char *value = getenv(line);
+            if (value) {
+                env = realloc(env, (i + 2) * sizeof(char *));
+                if (!env) {
+                    perror("realloc failed");
+                    fclose(file);
+                    for (int k = 0; k < i; k++) free(env[k]);
+                    free(env);
+                    return NULL;
+                }
+                env[i] = malloc(strlen(line) + strlen(value) + 2);
+                if (!env[i]) {
+                    perror("malloc failed");
+                    fclose(file);
+                    for (int k = 0; k < i; k++) free(env[k]);
+                    free(env);
+                    return NULL;
+                }
+                sprintf(env[i], "%s=%s", line, value);
+                i++;
+            }
+        }
+        fclose(file);
+    }
+    
     env[i] = NULL;
-    fclose(file);
     return env;
 }

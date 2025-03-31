@@ -12,6 +12,36 @@
 
 #define ENV_FILE "env"
 
+void print_env_from_file(const char *filename);
+void print_all_env(char *envp[]);
+/**
+* @brief Основная функция программы.
+* 
+* @param argc Количество аргументов командной строки.
+* @param argv Массив аргументов командной строки.
+* @param envp Массив переменных окружения.
+* @return int Код завершения программы.
+*/
+int main(int argc, char *argv[], char *envp[]) {
+    if (argc < 2) {
+        printf("Использование: %s [env]\n", argv[0]);
+        printf("  env - вывести переменные окружения из файла %s\n", ENV_FILE);
+        return EXIT_FAILURE;
+    }
+
+    printf("Имя процесса: %s\n", argv[0]);
+    printf("PID: %d\n", getpid());
+    printf("PPID: %d\n", getppid());
+
+    if (strcmp(argv[1], "env") == 0) {
+        print_env_from_file(ENV_FILE);
+    } else {
+        print_all_env(envp);
+    }
+
+    return EXIT_SUCCESS;
+}
+
 /**
 * @brief Выводит переменные окружения, указанные в файле.
 * 
@@ -46,30 +76,3 @@ void print_all_env(char *envp[]) {
     }
 }
 
-/**
-* @brief Основная функция программы.
-* 
-* @param argc Количество аргументов командной строки.
-* @param argv Массив аргументов командной строки.
-* @param envp Массив переменных окружения.
-* @return int Код завершения программы.
-*/
-int main(int argc, char *argv[], char *envp[]) {
-    if (argc < 2) {
-        printf("Использование: %s [env]\n", argv[0]);
-        printf("  env - вывести переменные окружения из файла %s\n", ENV_FILE);
-        return EXIT_FAILURE;
-    }
-
-    printf("Имя процесса: %s\n", argv[0]);
-    printf("PID: %d\n", getpid());
-    printf("PPID: %d\n", getppid());
-
-    if (strcmp(argv[1], "env") == 0) {
-        print_env_from_file(ENV_FILE);
-    } else {
-        print_all_env(envp);
-    }
-
-    return EXIT_SUCCESS;
-}
